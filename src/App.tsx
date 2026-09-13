@@ -10,7 +10,7 @@ import DepTable from './ui/DepTable';
 import BatchBar from './ui/BatchBar';
 import DetailPane from './ui/DetailPane';
 import AuditView from './ui/AuditView';
-import { AddDepModal, ExemptModal, ImportModal, PolicyEditor, ProjectModal } from './ui/modals';
+import { AddDepModal, ExemptGroup, ExemptModal, ImportModal, PolicyEditor, ProjectModal } from './ui/modals';
 import {
   DepStatus, KIND_LABEL, STATUS_LABEL, computeRisk, depKey, effectiveStatus, exemptionExpired,
 } from './types';
@@ -122,13 +122,18 @@ export default function App() {
     [store.audit, detailId],
   );
 
-  const exemptExceptionDays = (ids: number[]) => {
+  const exemptGroups = (ids: number[]): ExemptGroup[] => {
+    const map = new Map<string, ExemptGroup>();
     for (const id of ids) {
       const d = store.deps.find(x => x.id === id);
-      const p = d && store.projects.find(x => x.id === d.projectId);
-      if (p) return p.policy.exceptionDays;
+      if (!d) continue;
+      const p = d.projectId === null ? null : store.projects.find(x => x.id === d.projectId) ?? null;
+      const key = p ? String(p.id) : 'none';
+      const g = map.get(key) ?? { name: p ? p.name : '未归入项目（默认 30 天）', days: p ? p.policy.exceptionDays : 30, count: 0 };
+      g.count++;
+      map.set(key, g);
     }
-    return activeProject?.policy.exceptionDays ?? 30;
+    return [...map.values()];
   };
 
   const title = route.type === 'project' ? activeProject?.name ?? '项目'
@@ -292,7 +297,7 @@ export default function App() {
       {modal?.type === 'exempt' && (
         <ExemptModal
           count={(modal as { ids: number[] }).ids.length}
-          exceptionDays={exemptExceptionDays((modal as { ids: number[] }).ids)}
+          groups={exemptGroups((modal as { ids: number[] }).ids)}
           onClose={() => setModal(null)}
           onConfirm={(reason, until) => {
             wb.transitionDeps((modal as { ids: number[] }).ids, 'exempted', { reason, until });

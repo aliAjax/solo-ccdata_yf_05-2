@@ -2,7 +2,7 @@ import { ReactElement } from 'react';
 import { AlertTriangle, Ban, Check, Clock3, FileCode2, Info, ShieldQuestion, X } from 'lucide-react';
 import {
   ACTION_LABEL, AuditEntry, Dep, DepStatus, Project, RISK_LABEL, STATUS_LABEL,
-  computeRisk, exemptionExpired, fmtDate, fmtTime, inScope, transitionError,
+  computeRisk, effectiveStatus, exemptionExpired, fmtDate, fmtTime, inScope, transitionError,
 } from '../types';
 import { licenseColor } from './DepTable';
 
@@ -28,6 +28,7 @@ export default function DetailPane({ dep, project, audit, now, onClose, onTransi
   const policy = project ? project.policy : null;
   const risk = computeRisk(dep, policy);
   const expired = exemptionExpired(dep, now);
+  const eff = effectiveStatus(dep, now);
   const obligation = policy?.obligations.find(o => o.license === dep.license) ?? null;
   const banned = !!policy && policy.banned.includes(dep.license);
   const scoped = !!policy && inScope(dep, policy);
@@ -72,11 +73,11 @@ export default function DetailPane({ dep, project, audit, now, onClose, onTransi
       )}
 
       <div className="trans-box">
-        <label>状态流转（重复与非法流转将被拦截）</label>
+        <label>状态流转{expired ? '（豁免已过期，按待复核参与流转）' : '（重复与非法流转将被拦截）'}</label>
         <div className="trans-row">
           {STATUS_ORDER.map(s => {
-            const err = transitionError(dep.status, s);
-            const current = dep.status === s;
+            const err = transitionError(eff, s);
+            const current = eff === s;
             const cls = current ? 'trans current' : err ? 'trans blocked' : 'trans';
             return (
               <button

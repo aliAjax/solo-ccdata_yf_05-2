@@ -1,7 +1,7 @@
 import { ReactNode, useRef, useState } from 'react';
 import { AlertTriangle, FileUp, Plus, Trash2, X } from 'lucide-react';
 import {
-  KIND_LABEL, LICENSES, Obligation, Policy, PolicyKind, Project, SOURCES, clonePolicy, fmtTime,
+  KIND_LABEL, LICENSES, Obligation, Policy, PolicyKind, Project, SOURCES, clonePolicy, fmtDate, fmtTime,
 } from '../types';
 import { ImportAnalysis } from '../snapshot';
 
@@ -182,25 +182,65 @@ export function AddDepModal({ projects, defaultProjectId, isDuplicate, onClose, 
 
 // ---------- 豁免 ----------
 
-export function ExemptModal({ count, exceptionDays, onClose, onConfirm }: {
+export interface ExemptGroup { name: string; days: number; count: number }
+
+const DAY_MS = 86400000;
+
+export function ExemptModal({ count, groups, onClose, onConfirm }: {
   count: number;
-  exceptionDays: number;
+  /** 本批依赖按所属项目分组的例外期限（未归入项目按 30 天默认） */
+  groups: ExemptGroup[];
   onClose: () => void;
-  onConfirm: (reason: string, until: number) => void;
+  /** until 为 null 表示按各项目例外期限分别计算 */
+  onConfirm: (reason: string, until: number | null) => void;
 }) {
-  const defaultDate = new Date(Date.now() + exceptionDays * 86400000);
+  const [mode, setMode] = useState<'policy' | 'fixed'>('policy');
   const pad = (n: number) => String(n).padStart(2, '0');
-  const [date, setDate] = useState(`${defaultDate.getFullYear()}-${pad(defaultDate.getMonth() + 1)}-${pad(defaultDate.getDate())}`);
+  const toInput = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const defaultDays = groups.length === 1 ? groups[0].days : 30;
+  const [date, setDate] = useState(toInput(Date.now() + defaultDays * DAY_MS));
   const [reason, setReason] = useState('');
   const until = new Date(`${date}T23:59:59`).getTime();
-  const invalid = !date || Number.isNaN(until) || until <= Date.now();
+  const invalid = mode === 'fixed' && (!date || Number.isNaN(until) || until <= Date.now());
+  const mixed = groups.length > 1;
+
   return (
     <Shell title={`豁免 ${count} 个依赖`} onClose={onClose}>
-      <p className="modal-hint">豁免在例外期限内有效，到期后自动视同「待复核」。</p>
-      <label>豁免理由<textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} placeholder="例如：短期兼容方案，Q4 前替换为 MIT 许可的替代库" rows={3} /></label>
-      <label>豁免截止（默认按政策例外期限 {exceptionDays} 天）<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+      <p className="modal-hint">
+        豁免在例外期限内有效，到期后自动视同「待复核」，需重新流转。
+        {mixed && `本批依赖属于 ${groups.length} 个项目，可分别按各自例外期限生效。`}
+      </p>
+
+      <div className="mode-row">
+        <button className={mode === 'policy' ? 'mode-btn active' : 'mode-btn'} onClick={() => setMode('policy')}>
+          按项目例外期限
+        </button>
+        <button className={mode === 'fixed' ? 'mode-btn active' : 'mode-btn'} onClick={() => setMode('fixed')}>
+          统一截止日期
+        </button>
+      </div>
+
+      {mode === 'policy' && (
+        <div className="exempt-groups">
+          {groups.map(g => (
+            <div className="eg-row" key={g.name}>
+              <b>{g.name}</b>
+              <span>{g.days} 天 → 截止 {fmtDate(Date.now() + g.days * DAY_MS)}</span>
+              <i>{g.count} 项</i>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {mode === 'fixed' && (
+        <label>豁免截止<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+      )}
       {invalid && <p className="form-error"><AlertTriangle size={13} />截止日期必须晚于当前时间。</p>}
-      <button className="primary full" disabled={invalid || !reason.trim()} onClick={() => onConfirm(reason.trim(), until)}>确认豁免</button>
+
+      <label>豁免理由<textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} placeholder="例如：短期兼容方案，Q4 前替换为 MIT 许可的替代库" rows={3} /></label>
+      <button className="primary full" disabled={invalid || !reason.trim()} onClick={() => onConfirm(reason.trim(), mode === 'policy' ? null : until)}>
+        确认豁免
+      </button>
     </Shell>
   );
 }

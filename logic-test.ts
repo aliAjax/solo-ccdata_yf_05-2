@@ -1,6 +1,6 @@
 import {
   TRANSITIONS, computeRisk, effectiveStatus, exemptionExpired, transitionError,
-  clonePolicy, Dep, DepStatus,
+  clonePolicy, fmtDate, Dep, DepStatus,
 } from './src/types';
 import { analyzeSnapshot, buildSnapshot, SNAPSHOT_VERSION } from './src/snapshot';
 import {
@@ -209,6 +209,68 @@ eq(rm.next!.deps.length, seed.deps.length - 5, '批量删除依赖');
 const add = actAddDep(seed, { name: 'new-lib', version: '1.0.0', license: 'MIT', source: 'npm', projectId: null }, NOW);
 eq(add.next!.deps.length, seed.deps.length + 1, '添加依赖');
 eq(add.next!.deps[add.next!.deps.length - 1].status, 'pending', '新依赖默认待复核');
+
+// ---- 过期豁免按待复核参与流转 ----
+const DAY_MS = 86400000;
+const T = Date.now();
+const expired1 = seed.deps.find(d => exemptionExpired(d, T))!;
+eq(expired1.status, 'exempted', '过期项原始状态仍为豁免');
+eq(effectiveStatus(expired1, T), 'pending', '过期项有效状态为待复核');
+
+const dupPending = actTransitionDeps(seed, [expired1.id], 'pending', undefined, T);
+eq(dupPending.next, null, '过期项→待复核视为重复被拦截');
+ok(dupPending.message.includes('重复'), '过期项→待复核提示重复');
+
+const expApprove = actTransitionDeps(seed, [expired1.id], 'approved', undefined, T);
+ok(expApprove.next !== null, '过期项可直接批准');
+
+// 单项重豁免：状态、到期日、记录一致
+const expiredProj = seed.projects.find(p => p.id === expired1.projectId)!;
+const re = actTransitionDeps(seed, [expired1.id], 'exempted', { reason: '重新申请豁免', until: null }, T);
+ok(re.next !== null, '过期项可重新申请豁免');
+const reDep = re.next!.deps.find(d => d.id === expired1.id)!;
+eq(reDep.status, 'exempted', '重豁免后状态为豁免中');
+eq(reDep.exemption!.reason, '重新申请豁免', '重豁免理由更新');
+eq(reDep.exemption!.until, T + expiredProj.policy.exceptionDays * DAY_MS, '重豁免期限按所属项目政策');
+ok(!exemptionExpired(reDep, T), '重豁免后不再过期');
+const reAudit = re.next!.audit[re.next!.audit.length - 1];
+ok(reAudit.detail.includes('豁免已过期') && reAudit.detail.includes('豁免中'), '重豁免记录含流转路径');
+ok(reAudit.detail.includes('重新申请豁免') && reAudit.detail.includes(fmtDate(reDep.exemption!.until)), '重豁免记录含理由与到期日');
+
+// ---- 混合项目批量豁免：按各自政策分别生效 ----
+const [p0, p1, p2] = seed.projects; // closed=30 / internal=90 / open=60
+const m0 = seed.deps.find(d => d.projectId === p0.id && d.status === 'pending')!;
+const m1 = seed.deps.find(d => d.projectId === p1.id && d.status === 'pending')!;
+const m2 = seed.deps.find(d => d.projectId === p2.id && d.status === 'pending')!;
+const mixedBatch = actTransitionDeps(seed, [m0.id, m1.id, m2.id], 'exempted', { reason: '混合批量', until: null }, T);
+ok(mixedBatch.next !== null, '混合项目批量豁免成功');
+const untilOf = (id: number) => mixedBatch.next!.deps.find(d => d.id === id)!.exemption!.until;
+eq(untilOf(m0.id), T + 30 * DAY_MS, '闭源项目按 30 天');
+eq(untilOf(m1.id), T + 90 * DAY_MS, '内部项目按 90 天');
+eq(untilOf(m2.id), T + 60 * DAY_MS, '开源项目按 60 天');
+ok(mixedBatch.message.includes('分别生效'), '混合批量消息提示分别生效');
+const mixedAudits = mixedBatch.next!.audit.slice(-3);
+eq(mixedAudits.length, 3, '混合批量记录数');
+ok(mixedAudits.find(a => a.depId === m0.id)!.detail.includes(fmtDate(untilOf(m0.id))), '记录含闭源项目到期日');
+ok(mixedAudits.find(a => a.depId === m1.id)!.detail.includes(fmtDate(untilOf(m1.id))), '记录含内部项目到期日');
+ok(mixedAudits.find(a => a.depId === m2.id)!.detail.includes(fmtDate(untilOf(m2.id))), '记录含开源项目到期日');
+
+// 统一截止日期仍覆盖整批
+const uni = actTransitionDeps(seed, [m0.id, m1.id], 'exempted', { reason: '统一', until: T + 7 * DAY_MS }, T);
+ok(uni.next!.deps.every(d => ![m0.id, m1.id].includes(d.id) || d.exemption!.until === T + 7 * DAY_MS), '统一截止日期覆盖整批');
+
+// 无效截止时间拦截
+const badUntil = actTransitionDeps(seed, [m0.id], 'exempted', { reason: 'x', until: T - 1000 }, T);
+eq(badUntil.next, null, '过去截止时间被拦截');
+eq(badUntil.tone, 'error', '无效截止时间提示错误');
+ok(badUntil.message.includes('截止时间'), '无效截止时间消息含原因');
+const badUntilBatch = actTransitionDeps(seed, [m0.id, m1.id], 'exempted', { reason: 'x', until: T - 1000 }, T);
+eq(badUntilBatch.next, null, '批量中无效截止时间整批拦截');
+
+// 未归入项目按默认 30 天
+const unassigned = seed.deps.find(d => d.projectId === null)!;
+const unRes = actTransitionDeps(seed, [unassigned.id], 'exempted', { reason: 'x', until: null }, T);
+eq(unRes.next!.deps.find(d => d.id === unassigned.id)!.exemption!.until, T + 30 * DAY_MS, '未归入项目按默认 30 天');
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

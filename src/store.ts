@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  AuditEntry, Dep, DepStatus, Exemption, KIND_LABEL, Policy, PolicyKind, Project,
-  STATUS_LABEL, Store, clonePolicy, computeRisk, depKey, fmtDate, transitionError,
+  AuditEntry, Dep, DepStatus, Exemption, ExemptionInput, KIND_LABEL, Policy, PolicyKind, Project,
+  STATUS_LABEL, Store, clonePolicy, computeRisk, depKey, effectiveStatus, exemptionExpired, fmtDate, transitionError,
 } from './types';
 import { ImportAnalysis, buildSnapshot } from './snapshot';
 
@@ -166,16 +166,24 @@ export function actAssignDeps(s: Store, ids: number[], projectId: number | null,
   return { next, label: `批量归入 ${moving.length} 项 → ${targetName}`, message, tone };
 }
 
-/** 批量状态流转：重复与非法流转逐项拦截，合法项一次性提交（一步撤销） */
-export function actTransitionDeps(s: Store, ids: number[], target: DepStatus, exemption: Exemption | undefined, now: number): ActionResult {
+/** 批量状态流转：重复与非法流转逐项拦截，合法项一次性提交（一步撤销）。
+ *  过期豁免按 effectiveStatus=待复核 参与流转，可重新申请豁免；
+ *  豁免截止时间为 null 时按每个依赖所属项目的例外期限分别计算。 */
+export function actTransitionDeps(s: Store, ids: number[], target: DepStatus, exemption: ExemptionInput | undefined, now: number): ActionResult {
   const idSet = new Set(ids);
-  const applied: Dep[] = [];
+  // 豁免参数对整批统一校验
+  const exemptErr = target !== 'exempted' ? null
+    : !exemption || !exemption.reason.trim() ? '缺少豁免信息'
+    : exemption.until !== null && exemption.until <= now ? '豁免截止时间必须晚于当前时间'
+    : null;
+  const applied: Array<{ dep: Dep; from: DepStatus }> = [];
   const blocked: Array<{ dep: Dep; reason: string }> = [];
   for (const d of s.deps) {
     if (!idSet.has(d.id)) continue;
-    const err = transitionError(d.status, target) ?? (target === 'exempted' && !exemption ? '缺少豁免信息' : null);
+    const from = effectiveStatus(d, now);
+    const err = transitionError(from, target) ?? exemptErr;
     if (err) blocked.push({ dep: d, reason: err });
-    else applied.push(d);
+    else applied.push({ dep: d, from });
   }
   if (!applied.length) {
     const first = blocked[0];
@@ -185,17 +193,29 @@ export function actTransitionDeps(s: Store, ids: number[], target: DepStatus, ex
       tone: 'error',
     };
   }
-  const appliedIds = new Set(applied.map(d => d.id));
+  const appliedIds = new Set(applied.map(a => a.dep.id));
+  const daysFor = (d: Dep) => s.projects.find(p => p.id === d.projectId)?.policy.exceptionDays ?? 30;
+  const resolveExemption = (d: Dep): Exemption => ({
+    reason: exemption!.reason.trim(),
+    until: exemption!.until ?? now + daysFor(d) * DAY,
+  });
   const deps = s.deps.map(d => appliedIds.has(d.id)
-    ? { ...d, status: target, exemption: target === 'exempted' ? exemption! : d.exemption, updatedAt: now }
+    ? { ...d, status: target, exemption: target === 'exempted' ? resolveExemption(d) : d.exemption, updatedAt: now }
     : d);
   let next: Store = { ...s, deps };
-  next = appendAudit(next, applied.map(d => ({
-    at: now, actor: ACTOR, action: 'dep.transition',
-    detail: `「${STATUS_LABEL[d.status]}」→「${STATUS_LABEL[target]}」${target === 'exempted' && exemption ? `，豁免至 ${fmtDate(exemption.until)}：${exemption.reason}` : ''}`,
-    projectId: d.projectId, depId: d.id,
-  })));
+  next = appendAudit(next, applied.map(({ dep: d, from }) => {
+    const fromLabel = exemptionExpired(d, now) ? '豁免已过期' : STATUS_LABEL[from];
+    const ex = target === 'exempted' ? resolveExemption(d) : null;
+    return {
+      at: now, actor: ACTOR, action: 'dep.transition',
+      detail: `「${fromLabel}」→「${STATUS_LABEL[target]}」${ex ? `，豁免至 ${fmtDate(ex.until)}：${ex.reason}` : ''}`,
+      projectId: d.projectId, depId: d.id,
+    };
+  }));
   let message = `已流转 ${applied.length} 项 → ${STATUS_LABEL[target]}`;
+  if (target === 'exempted' && exemption) {
+    message += exemption.until !== null ? `，统一截止 ${fmtDate(exemption.until)}` : '，按各项目例外期限分别生效';
+  }
   let tone: ActionResult['tone'] = 'ok';
   if (blocked.length) {
     const reasons = [...new Set(blocked.map(b => b.reason))].join('；');
@@ -448,7 +468,7 @@ export function useWorkbench() {
     addDep: (input: { name: string; version: string; license: string; source: string; projectId: number | null }) =>
       run(actAddDep(store, input, Date.now())),
     assignDeps: (ids: number[], projectId: number | null) => run(actAssignDeps(store, ids, projectId, Date.now())),
-    transitionDeps: (ids: number[], target: DepStatus, exemption?: Exemption) =>
+    transitionDeps: (ids: number[], target: DepStatus, exemption?: ExemptionInput) =>
       run(actTransitionDeps(store, ids, target, exemption, Date.now())),
     removeDeps: (ids: number[]) => run(actRemoveDeps(store, ids, Date.now())),
     exportSnapshot,

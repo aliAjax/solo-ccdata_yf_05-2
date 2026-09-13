@@ -36,6 +36,12 @@ export interface Exemption {
   until: number;
 }
 
+/** 豁免申请输入：until 为 null 时按各依赖所属项目的例外期限分别计算 */
+export interface ExemptionInput {
+  reason: string;
+  until: number | null;
+}
+
 export interface Dep {
   id: number;
   name: string;

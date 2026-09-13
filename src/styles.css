@@ -215,6 +215,17 @@ header p{margin:6px 0 0;color:#8d9ba0;font-size:12px}
 .ir-conflicts p{margin:8px 0 0;font-size:10px;color:#8d9ba0}
 .ir-clean{margin:12px 0 0;color:#1b8a70;font-size:10px}
 
+/* ---------- 豁免弹窗 ---------- */
+.mode-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.mode-btn{border:1px solid #dfe8e9;background:#fff;border-radius:7px;padding:9px 10px;font-size:11px;font-weight:600;color:#64757a;cursor:pointer}
+.mode-btn.active{border-color:#2eab8e;background:#f0faf7;color:#1b8a70}
+.exempt-groups{border:1px solid #e5ebed;border-radius:8px;margin-top:10px;padding:4px 12px}
+.eg-row{display:flex;align-items:baseline;gap:8px;padding:8px 0;border-bottom:1px dashed #eef2f3;font-size:10px}
+.eg-row:last-child{border-bottom:0}
+.eg-row b{font-size:11px;color:#33484f;white-space:nowrap}
+.eg-row span{color:#7c8c91}
+.eg-row i{margin-left:auto;font-style:normal;font-weight:700;color:#8d9ca1;font-size:9px;white-space:nowrap}
+
 /* ---------- Toast ---------- */
 .toasts{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;gap:8px;z-index:80;max-width:380px}
 .toast{display:flex;align-items:flex-start;gap:8px;background:#20323a;color:#e3edee;font-size:11px;line-height:1.5;padding:11px 14px;border-radius:9px;box-shadow:0 6px 24px #16303a33;animation:slide-in .18s ease-out}
