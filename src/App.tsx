@@ -1,6 +1,328 @@
-import {useEffect,useMemo,useState} from 'react';
-import {AlertTriangle,Check,ChevronDown,Download,FileCode2,Info,Layers3,Plus,Search,ShieldCheck,Sparkles,Upload, X} from 'lucide-react';
-type Dep={id:number;name:string;version:string;license:string;source:string;status:'ok'|'warn'|'risk';note:string};
-const initial:Dep[]=[{id:1,name:'react',version:'18.3.1',license:'MIT',source:'npm',status:'ok',note:'宽松许可，可商用'}, {id:2,name:'lodash',version:'4.17.21',license:'MIT',source:'npm',status:'ok',note:'宽松许可，可商用'}, {id:3,name:'chart.js',version:'4.4.4',license:'MIT',source:'npm',status:'ok',note:'宽松许可，可商用'}, {id:4,name:'highlight.js',version:'11.10.0',license:'BSD-3-Clause',source:'npm',status:'warn',note:'再发布需保留版权声明'}, {id:5,name:'legacy-parser',version:'2.1.0',license:'GPL-3.0',source:'手动',status:'risk',note:'可能与闭源分发冲突'}];
-const colors:Record<string,string>={MIT:'#35b995','BSD-3-Clause':'#6d9ee8','GPL-3.0':'#ec8c75','Apache-2.0':'#b18ee4'};
-export default function App(){const [deps,setDeps]=useState<Dep[]>(()=>{try{return JSON.parse(localStorage.getItem('license-lens')||'')||initial}catch{return initial}});const [query,setQuery]=useState('');const [filter,setFilter]=useState('全部');const [selected,setSelected]=useState(1);const [showAdd,setShowAdd]=useState(false);const [name,setName]=useState('');const [license,setLicense]=useState('MIT');const current=deps.find(d=>d.id===selected);useEffect(()=>localStorage.setItem('license-lens',JSON.stringify(deps)),[deps]);const filtered=useMemo(()=>deps.filter(d=>(filter==='全部'||d.status===filter)&&`${d.name}${d.license}`.toLowerCase().includes(query.toLowerCase())),[deps,filter,query]);const add=()=>{if(!name.trim())return;const id=Date.now();setDeps(ds=>[...ds,{id,name:name.trim(),version:'1.0.0',license,source:'手动',status:license.startsWith('GPL')?'risk':license==='MIT'?'ok':'warn',note:license==='MIT'?'宽松许可，可商用':'请核对分发义务'}]);setSelected(id);setName('');setShowAdd(false)};const exportMd=()=>{const text=`# License Lens\n\n| 依赖 | 版本 | 许可证 | 状态 |\n|---|---|---|---|\n${deps.map(d=>`| ${d.name} | ${d.version} | ${d.license} | ${d.status} |`).join('\n')}`;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/markdown'}));a.download='license-report.md';a.click();URL.revokeObjectURL(a.href)};return <div className="shell"><aside><div className="brand"><div className="brand-icon"><ShieldCheck size={18}/></div><div><b>License Lens</b><small>dependency clarity</small></div></div><div className="nav-title">WORKSPACE</div><button className="nav active"><Layers3 size={16}/>依赖总览</button><button className="nav"><FileCode2 size={16}/>许可证清单 <span>{deps.length}</span></button><button className="nav"><AlertTriangle size={16}/>待处理风险 <span className="red">{deps.filter(d=>d.status==='risk').length}</span></button><div className="aside-bottom"><div className="mini-card"><Sparkles size={16}/><div><b>扫描已更新</b><small>刚刚完成 5 个依赖的分析</small></div></div><div className="user"><div className="avatar">ZL</div><span>Zen Li</span><ChevronDown size={14}/></div></div></aside><main><header><div><div className="crumb">WORKSPACE / <b>PROJECT SCAN</b></div><h1>许可证兼容性分析</h1><p>检查依赖许可，放心发布你的项目。</p></div><div className="head-actions"><button className="outline" onClick={exportMd}><Download size={15}/>导出报告</button><button className="primary" onClick={()=>setShowAdd(true)}><Plus size={16}/>添加依赖</button></div></header><section className="hero"><div><span className="tag">PROJECT · AURORA-WEB</span><h2>发布前，再确认一次。</h2><p>我们扫描了 <b>{deps.length} 个依赖</b>，发现 <b className="warning">{deps.filter(d=>d.status!=='ok').length} 个项目</b>需要你的关注。</p></div><div className="scan-score"><div className="score-ring"><strong>{Math.round(deps.filter(d=>d.status==='ok').length/deps.length*100)}<small>%</small></strong></div><div><span>兼容评分</span><b>良好</b><small>上次扫描 2 分钟前</small></div></div></section><section className="summary"><div><span>全部依赖</span><b>{deps.length}</b><small>+2 本次新增</small></div><div><span>安全许可</span><b className="teal">{deps.filter(d=>d.status==='ok').length}</b><small>可直接分发</small></div><div><span>需要复核</span><b className="orange">{deps.filter(d=>d.status==='warn').length}</b><small>保留声明即可</small></div><div><span>高风险</span><b className="red">{deps.filter(d=>d.status==='risk').length}</b><small>建议替换或隔离</small></div></section><section className="workspace"><div className="table-pane"><div className="pane-head"><div><h2>依赖清单</h2><p>逐项查看许可证义务</p></div><div className="tools"><div className="search"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索依赖"/></div><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="全部">全部状态</option><option value="ok">安全</option><option value="warn">复核</option><option value="risk">高风险</option></select></div></div><div className="table"><div className="tr th"><span>依赖名称</span><span>版本</span><span>许可证</span><span>状态</span></div>{filtered.map(d=><button className={d.id===selected?'tr selected':'tr'} key={d.id} onClick={()=>setSelected(d.id)}><span className="dep-name"><span className="pkg-dot"/> {d.name}</span><span className="muted">{d.version}</span><span><i className="license" style={{color:colors[d.license]||'#888',background:(colors[d.license]||'#888')+'18'}}>{d.license}</i></span><span className={'status '+d.status}>{d.status==='ok'?<Check size={13}/>:<AlertTriangle size={13}/>} {d.status==='ok'?'安全':d.status==='warn'?'复核':'高风险'}</span></button>)}</div></div>{current&&<div className="detail"><div className="detail-head"><div className="detail-icon" style={{background:(colors[current.license]||'#888')+'1c',color:colors[current.license]}}><FileCode2 size={20}/></div><div><span>SELECTED DEPENDENCY</span><h2>{current.name}</h2></div><button className="close" onClick={()=>setSelected(0)}><X size={16}/></button></div><div className="detail-grid"><div><label>版本</label><b>{current.version}</b></div><div><label>来源</label><b>{current.source}</b></div><div><label>许可证</label><b>{current.license}</b></div></div><div className={'finding '+current.status}><div className="finding-icon">{current.status==='ok'?<Check size={16}/>:<AlertTriangle size={16}/>}</div><div><b>{current.status==='ok'?'可以放心使用':current.status==='warn'?'需要保留声明':'存在分发限制'}</b><p>{current.note}。扫描结果基于 package 元数据，请在发布前查看完整许可证文本。</p></div></div><div className="full-license"><div><Info size={15}/><span>许可证摘要</span></div><p>{current.license} 允许在满足其条款的前提下使用和分发代码。详细义务请参考项目仓库中的 LICENSE 文件。</p><button>查看原文 <ChevronDown size={14}/></button></div></div>}</section></main>{showAdd&&<div className="backdrop" onClick={()=>setShowAdd(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><h2>添加依赖</h2><button onClick={()=>setShowAdd(false)}>×</button></div><label>依赖名称<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="例如 date-fns"/></label><label>许可证<select value={license} onChange={e=>setLicense(e.target.value)}><option>MIT</option><option>BSD-3-Clause</option><option>Apache-2.0</option><option>GPL-3.0</option></select></label><button className="primary full" onClick={add}>加入扫描</button></div></div>}</div>}
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle, Check, Download, Layers3, Plus, Redo2, Search,
+  ShieldCheck, SlidersHorizontal, Undo2, Upload,
+} from 'lucide-react';
+import { useWorkbench } from './store';
+import { analyzeSnapshot } from './snapshot';
+import Sidebar, { Route } from './ui/Sidebar';
+import DepTable from './ui/DepTable';
+import BatchBar from './ui/BatchBar';
+import DetailPane from './ui/DetailPane';
+import AuditView from './ui/AuditView';
+import { AddDepModal, ExemptModal, ImportModal, PolicyEditor, ProjectModal } from './ui/modals';
+import {
+  DepStatus, KIND_LABEL, STATUS_LABEL, computeRisk, depKey, effectiveStatus, exemptionExpired,
+} from './types';
+
+type Modal =
+  | { type: 'project' }
+  | { type: 'policy'; projectId: number }
+  | { type: 'addDep' }
+  | { type: 'exempt'; ids: number[] }
+  | { type: 'import' };
+
+const STATUS_FILTERS: Array<'全部' | DepStatus> = ['全部', 'pending', 'approved', 'exempted', 'rejected'];
+
+export default function App() {
+  const wb = useWorkbench();
+  const { store } = wb;
+  const [route, setRoute] = useState<Route>(
+    store.projects.length ? { type: 'project', id: store.projects[0].id } : { type: 'all' },
+  );
+  const [modal, setModal] = useState<Modal | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'全部' | DepStatus>('全部');
+  const [now, setNow] = useState(Date.now());
+
+  // 每分钟刷新一次，让豁免到期状态及时体现
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  const routeKey = route.type === 'project' ? `p${route.id}` : route.type;
+  useEffect(() => {
+    setSelected(new Set());
+    setDetailId(null);
+    setQuery('');
+    setStatusFilter('全部');
+  }, [routeKey]);
+
+  // 当前项目被删除时回退到全部依赖
+  const activeProject = route.type === 'project' ? store.projects.find(p => p.id === route.id) ?? null : null;
+  useEffect(() => {
+    if (route.type === 'project' && !activeProject) setRoute({ type: 'all' });
+  }, [route, activeProject]);
+
+  // 撤销/重做快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) wb.redo(); else wb.undo();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        wb.redo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  });
+
+  const routeDeps = useMemo(() => {
+    if (route.type === 'project') return store.deps.filter(d => d.projectId === route.id);
+    if (route.type === 'expired') return store.deps.filter(d => exemptionExpired(d, now));
+    return store.deps;
+  }, [store.deps, route, now]);
+
+  const filtered = useMemo(() => routeDeps.filter(d => {
+    if (statusFilter !== '全部' && effectiveStatus(d, now) !== statusFilter) return false;
+    const q = query.trim().toLowerCase();
+    return !q || `${d.name} ${d.version} ${d.license}`.toLowerCase().includes(q);
+  }), [routeDeps, statusFilter, query, now]);
+
+  const stats = useMemo(() => {
+    const eff = routeDeps.map(d => ({ d, s: effectiveStatus(d, now) }));
+    const policyOf = (projectId: number | null) => store.projects.find(p => p.id === projectId)?.policy ?? null;
+    return {
+      total: routeDeps.length,
+      pending: eff.filter(x => x.s === 'pending').length,
+      approved: eff.filter(x => x.s === 'approved').length,
+      exempted: eff.filter(x => x.s === 'exempted').length,
+      expired: routeDeps.filter(d => exemptionExpired(d, now)).length,
+      rejected: eff.filter(x => x.s === 'rejected').length,
+      high: eff.filter(x => x.s === 'pending' && computeRisk(x.d, policyOf(x.d.projectId)) === 'high').length,
+      unassigned: routeDeps.filter(d => d.projectId === null).length,
+    };
+  }, [routeDeps, store.projects, now]);
+
+  const toggle = (id: number) => setSelected(prev => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  const toggleAll = (ids: number[]) => setSelected(prev => {
+    const n = new Set(prev);
+    if (ids.length && ids.every(id => n.has(id))) ids.forEach(id => n.delete(id));
+    else ids.forEach(id => n.add(id));
+    return n;
+  });
+
+  const selectedIds = [...selected];
+  const batchDone = () => setSelected(new Set());
+
+  const detailDep = detailId === null ? null : store.deps.find(d => d.id === detailId) ?? null;
+  const detailAudit = useMemo(
+    () => detailId === null ? [] : store.audit.filter(a => a.depId === detailId).sort((a, b) => b.at - a.at),
+    [store.audit, detailId],
+  );
+
+  const exemptExceptionDays = (ids: number[]) => {
+    for (const id of ids) {
+      const d = store.deps.find(x => x.id === id);
+      const p = d && store.projects.find(x => x.id === d.projectId);
+      if (p) return p.policy.exceptionDays;
+    }
+    return activeProject?.policy.exceptionDays ?? 30;
+  };
+
+  const title = route.type === 'project' ? activeProject?.name ?? '项目'
+    : route.type === 'all' ? '全部依赖'
+    : route.type === 'expired' ? '豁免过期'
+    : '操作记录';
+
+  const score = stats.total === 0 ? null : Math.round((stats.approved / stats.total) * 100);
+
+  return (
+    <div className="shell">
+      <Sidebar
+        projects={store.projects}
+        deps={store.deps}
+        route={route}
+        onRoute={setRoute}
+        onNewProject={() => setModal({ type: 'project' })}
+        onDeleteProject={wb.deleteProject}
+        now={now}
+      />
+
+      <main>
+        <header>
+          <div>
+            <div className="crumb">WORKBENCH / <b>{title.toUpperCase()}</b></div>
+            <h1>
+              {title}
+              {activeProject && <i className={`kind-badge ${activeProject.policy.kind}`}>{KIND_LABEL[activeProject.policy.kind]}</i>}
+            </h1>
+            <p>
+              {route.type === 'project' && activeProject &&
+                `禁止 ${activeProject.policy.banned.length} 项许可 · 附加义务 ${activeProject.policy.obligations.length} 条 · 例外期限 ${activeProject.policy.exceptionDays} 天 · 生效范围 ${activeProject.policy.scope.sources.join('/')}`}
+              {route.type === 'all' && '跨项目查看与批量归入，风险按各自项目政策计算。'}
+              {route.type === 'expired' && '以下依赖的豁免已超过例外期限，视同待复核，请重新流转。'}
+              {route.type === 'audit' && '项目、政策与依赖的全部操作历史。'}
+            </p>
+          </div>
+          <div className="head-actions">
+            <button className="outline" disabled={!wb.canUndo} onClick={wb.undo} title="撤销 (Ctrl+Z)"><Undo2 size={15} />撤销</button>
+            <button className="outline" disabled={!wb.canRedo} onClick={wb.redo} title="重做 (Ctrl+Shift+Z)"><Redo2 size={15} />重做</button>
+            {activeProject && <>
+              <button className="outline" onClick={() => wb.exportSnapshot(activeProject.id)}><Download size={15} />导出快照</button>
+              <button className="outline" onClick={() => setModal({ type: 'policy', projectId: activeProject.id })}><SlidersHorizontal size={15} />编辑政策</button>
+            </>}
+            <button className="outline" onClick={() => setModal({ type: 'import' })}><Upload size={15} />导入快照</button>
+            <button className="primary" onClick={() => setModal({ type: 'addDep' })}><Plus size={16} />添加依赖</button>
+          </div>
+        </header>
+
+        {route.type !== 'audit' && <>
+          <section className="summary six">
+            <div><span>依赖总数</span><b>{stats.total}</b><small>{route.type === 'all' ? `未归入 ${stats.unassigned}` : '当前范围'}</small></div>
+            <div><span>待复核</span><b className="orange">{stats.pending}</b><small>含过期豁免 {stats.expired}</small></div>
+            <div><span>高风险</span><b className="red">{stats.high}</b><small>待复核中命中禁止许可</small></div>
+            <div><span>豁免中</span><b className="teal">{stats.exempted}</b><small>例外期限内有效</small></div>
+            <div><span>已批准</span><b>{stats.approved}</b><small>{score === null ? '—' : `合规率 ${score}%`}</small></div>
+            <div><span>已驳回</span><b className="muted-b">{stats.rejected}</b><small>需替换或移除</small></div>
+          </section>
+
+          <section className="workspace single">
+            <div className="table-pane">
+              <div className="pane-head">
+                <div>
+                  <h2>{route.type === 'expired' ? '过期豁免清单' : '依赖清单'}</h2>
+                  <p>{filtered.length} / {routeDeps.length} 项{selected.size > 0 ? ` · 已选 ${selected.size} 项` : ''}</p>
+                </div>
+                <div className="tools">
+                  <div className="search"><Search size={15} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索依赖" /></div>
+                  <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as '全部' | DepStatus)}>
+                    {STATUS_FILTERS.map(s => <option key={s} value={s}>{s === '全部' ? '全部状态' : STATUS_LABEL[s]}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <BatchBar
+                count={selected.size}
+                projects={store.projects}
+                onAssign={pid => { wb.assignDeps(selectedIds, pid); batchDone(); }}
+                onApprove={() => { wb.transitionDeps(selectedIds, 'approved'); batchDone(); }}
+                onExempt={() => setModal({ type: 'exempt', ids: selectedIds })}
+                onReject={() => { wb.transitionDeps(selectedIds, 'rejected'); batchDone(); }}
+                onRemove={() => { wb.removeDeps(selectedIds); batchDone(); }}
+                onClear={batchDone}
+              />
+
+              {route.type === 'project' && activeProject && routeDeps.length === 0 ? (
+                <div className="empty-state">
+                  <Layers3 size={28} />
+                  <b>「{activeProject.name}」还是空项目</b>
+                  <p>添加新依赖，或到「全部依赖」中勾选后批量归入本项目，风险将按本项目政策自动重算。</p>
+                  <div>
+                    <button className="primary" onClick={() => setModal({ type: 'addDep' })}><Plus size={15} />添加依赖</button>
+                    <button className="outline" onClick={() => setRoute({ type: 'all' })}>去全部依赖挑选</button>
+                  </div>
+                </div>
+              ) : (
+                <DepTable
+                  deps={filtered}
+                  projects={store.projects}
+                  showProject={route.type !== 'project'}
+                  selected={selected}
+                  onToggle={toggle}
+                  onToggleAll={toggleAll}
+                  onOpen={id => setDetailId(id === detailId ? null : id)}
+                  detailId={detailId}
+                  now={now}
+                />
+              )}
+            </div>
+
+            {detailDep && (
+              <DetailPane
+                dep={detailDep}
+                project={store.projects.find(p => p.id === detailDep.projectId) ?? null}
+                audit={detailAudit}
+                now={now}
+                onClose={() => setDetailId(null)}
+                onTransition={s => wb.transitionDeps([detailDep.id], s)}
+                onExempt={() => setModal({ type: 'exempt', ids: [detailDep.id] })}
+              />
+            )}
+          </section>
+        </>}
+
+        {route.type === 'audit' && <AuditView audit={store.audit} projects={store.projects} />}
+      </main>
+
+      {modal?.type === 'project' && (
+        <ProjectModal
+          onClose={() => setModal(null)}
+          onCreate={(name, kind) => {
+            const id = wb.addProject(name, kind);
+            setModal(null);
+            setRoute({ type: 'project', id });
+          }}
+        />
+      )}
+      {modal?.type === 'policy' && (() => {
+        const project = store.projects.find(p => p.id === (modal as { projectId: number }).projectId);
+        return project ? (
+          <PolicyEditor
+            project={project}
+            onClose={() => setModal(null)}
+            onSave={policy => { wb.updatePolicy(project.id, policy); setModal(null); }}
+          />
+        ) : null;
+      })()}
+      {modal?.type === 'addDep' && (
+        <AddDepModal
+          projects={store.projects}
+          defaultProjectId={activeProject?.id ?? null}
+          isDuplicate={(name, version) => store.deps.some(d => depKey(d.name, d.version) === depKey(name, version))}
+          onClose={() => setModal(null)}
+          onAdd={input => {
+            wb.addDep(input);
+            setModal(null);
+            if (input.projectId !== null) setRoute({ type: 'project', id: input.projectId });
+          }}
+        />
+      )}
+      {modal?.type === 'exempt' && (
+        <ExemptModal
+          count={(modal as { ids: number[] }).ids.length}
+          exceptionDays={exemptExceptionDays((modal as { ids: number[] }).ids)}
+          onClose={() => setModal(null)}
+          onConfirm={(reason, until) => {
+            wb.transitionDeps((modal as { ids: number[] }).ids, 'exempted', { reason, until });
+            setModal(null);
+            batchDone();
+          }}
+        />
+      )}
+      {modal?.type === 'import' && (
+        <ImportModal
+          analyze={text => analyzeSnapshot(text, { projectNames: wb.existingProjectNames(), depKeys: wb.existingDepKeys() })}
+          onClose={() => setModal(null)}
+          onConfirm={analysis => {
+            const pid = wb.applyImport(analysis);
+            setModal(null);
+            if (pid !== null) setRoute({ type: 'project', id: pid });
+          }}
+        />
+      )}
+
+      <div className="toasts">
+        {wb.toasts.map(t => (
+          <div key={t.id} className={`toast ${t.tone}`}>
+            {t.tone === 'ok' ? <Check size={14} /> : <AlertTriangle size={14} />}
+            <span>{t.text}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="save-hint"><ShieldCheck size={12} />已自动保存</div>
+    </div>
+  );
+}
